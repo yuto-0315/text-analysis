@@ -2,6 +2,9 @@
 
 このプロジェクトの簡単な説明
 
+## Python3.11.x インストール方法
+https://www.python.org/downloads/windows/
+
 
 ## Python 仮想環境 (venv)
 このプロジェクトではリポジトリルートに `.venv` という名前で Python の仮想環境を作成することを想定しています。以下は macOS (zsh) での手順です。
