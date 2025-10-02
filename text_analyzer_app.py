@@ -7,6 +7,7 @@ import networkx as nx
 from collections import Counter
 import re
 import prince
+import json
 
 # --- アプリケーションの基本設定 ---
 st.set_page_config(
@@ -16,17 +17,26 @@ st.set_page_config(
 
 # --- 定数定義 ---
 PRESET_RULES = {
-    "感情": {"コード名": "＊感情", "単語リスト": "嬉しい,楽しい,悲しい,怒り,好き,嫌い,安心,不安,喜び,驚き,落ち着く,寂しい,興奮"},
-    "人物": {"コード名": "＊人物", "単語リスト": "私,あなた,彼,彼女,友人,家族,先生,自分,相手,人間,同僚,上司,部下,子供,親"},
-    "時間": {"コード名": "＊時間", "単語リスト": "時,時間,今日,明日,昨日,未来,過去,現在,昔,今,朝,昼,夜,週,月"},
-    "行動": {"コード名": "＊行動", "単語リスト": "見る,聞く,話す,行く,来る,食べる,思う,感じる,考える,する,始める,続ける,止める,決める"},
-    "場所": {"コード名": "＊場所", "単語リスト": "家,学校,職場,公園,店,駅,部屋,街,庭,海,山,病院,図書館,カフェ,会場"},
-    "状況": {"コード名": "＊状況", "単語リスト": "問題,事情,状況,機会,危機,成功,失敗,準備,変化,過程,理由,条件,背景,影響,対応"},
-    "目的": {"コード名": "＊目的", "単語リスト": "目的,理由,目標,意図,動機,狙い,ため,ために,ゴール,狙う,達成,意向,希望,狙い目"},
-    "評価": {"コード名": "＊評価", "単語リスト": "良い,悪い,優れている,劣っている,高い,低い,満足,不満,評価,批判,賞賛,問題点,利点,欠点"},
-    "健康": {"コード名": "＊健康", "単語リスト": "健康,病気,体調,疲れ,睡眠,運動,食事,治療,診察,薬,検査,怪我,ストレス,回復"},
-    "仕事": {"コード名": "＊仕事", "単語リスト": "仕事,業務,職場,転職,残業,会議,プロジェクト,給料,雇用,担当,評価,納期,契約,部署"},
-    "数量": {"コード名": "＊数量", "単語リスト": "多い,少ない,数,量,倍,全部,一部,一つ,二つ,半分,程度,増える,減る,平均,割合"},
+    # "感情": {"コード名": "＊感情", "単語リスト": "嬉しい,楽しい,悲しい,怒り,好き,嫌い,安心,不安,喜び,驚き,落ち着く,寂しい,興奮"},
+    # "人物": {"コード名": "＊人物", "単語リスト": "私,あなた,彼,彼女,友人,家族,先生,自分,相手,人間,同僚,上司,部下,子供,親"},
+    # "時間": {"コード名": "＊時間", "単語リスト": "時,時間,今日,明日,昨日,未来,過去,現在,昔,今,朝,昼,夜,週,月"},
+    # "行動": {"コード名": "＊行動", "単語リスト": "見る,聞く,話す,行く,来る,食べる,思う,感じる,考える,する,始める,続ける,止める,決める"},
+    # "場所": {"コード名": "＊場所", "単語リスト": "家,学校,職場,公園,店,駅,部屋,街,庭,海,山,病院,図書館,カフェ,会場"},
+    # "状況": {"コード名": "＊状況", "単語リスト": "問題,事情,状況,機会,危機,成功,失敗,準備,変化,過程,理由,条件,背景,影響,対応"},
+    # "目的": {"コード名": "＊目的", "単語リスト": "目的,理由,目標,意図,動機,狙い,ため,ために,ゴール,狙う,達成,意向,希望,狙い目"},
+    # "評価": {"コード名": "＊評価", "単語リスト": "良い,悪い,優れている,劣っている,高い,低い,満足,不満,評価,批判,賞賛,問題点,利点,欠点"},
+    # "健康": {"コード名": "＊健康", "単語リスト": "健康,病気,体調,疲れ,睡眠,運動,食事,治療,診察,薬,検査,怪我,ストレス,回復"},
+    # "仕事": {"コード名": "＊仕事", "単語リスト": "仕事,業務,職場,転職,残業,会議,プロジェクト,給料,雇用,担当,評価,納期,契約,部署"},
+    # "数量": {"コード名": "＊数量", "単語リスト": "多い,少ない,数,量,倍,全部,一部,一つ,二つ,半分,程度,増える,減る,平均,割合"},
+    "自然": {"コード名": "＊自然", "単語リスト": "光,花,風,星空,雨,海,山,川,河,丘,雪,波,葉,雲,青空,虹,潮,天,森,林,木,欅,太陽,朝日,夕日,大地,地,土,水,地球,宇宙,草,実,泉,月,畑,種,野,火,野原,高原,炎"},
+    "人間関係": {"コード名": "＊人間関係", "単語リスト": "もの,者,われ,我,友情,自分,じぶん,彼,あなた,君,きみ,父,母,僕,ぼく,私,わたし,人,人間,友だち,ともだち,友達,友人,仲間,家族,なかま,かぞく,みんな,おじさん,おばさん,誰,だれ"},
+    "環境生活": {"コード名": "＊環境生活", "単語リスト": "学校,世界,世,町,まち,街"},
+    "時間2": {"コード名": "＊時間2", "単語リスト": "日,時,とき,時間,朝,昼,夕,夜,昨日,今日,明日,未来,過去,昔,春,夏,秋,冬"},
+    "心情": {"コード名": "＊心情", "単語リスト": "思い出,想い出,思い出す,こころ,心,気持ち"},
+    "ポジティブ": {"コード名": "＊ポジティブ", "単語リスト": "夢,希望,遥か,彼方,愛,志,願い,勇気,絆,奇跡,道,途,路,扉,歌,命,無限,銀河,平和,生命,生きる,輝き,祈り,祈る,力,羽,翼,幸せ,幸福,遙か,歓び,信じる,笑顔,笑う,輝く,青春,光る,よろこび"},
+    "ネガティブ": {"コード名": "＊ネガティブ", "単語リスト": "悲しい,哀しい,悲しみ,哀しみ,悲しむ,哀しむ,涙,泣く,別れ,かなしい,かなしみ,かなしむ,なみだ,なく,わかれ,弱さ,よわさ,弱い,よわい,寂しい,さびしい,寂しさ,さびしさ,不安"},
+    "体": {"コード名": "＊体", "単語リスト": "頭,あたま,口,くち,顔,かお,耳,みみ,目,瞳,声,こえ,肩,かた,足,あし,脚,胸,むね,頬,腕,ひとみ"},
+    "色": {"コード名": "＊色", "単語リスト": "青,青い,赤,赤い,白,白い,黄,黄色,黄色い,黒,黒い,緑,緑色,虹色,金,金色,銀,銀色,色"},
 }
 
 # --- Streamlitのセッション状態管理 ---
@@ -113,12 +123,98 @@ def analyze(documents, rules_df):
     return {"df_simple": df_simple, "df_cross": df_cross, "doc_coded_words": list(doc_results.values()), 
             "all_codes": all_codes, "morph_results": morph_results, "coded_word_details": coded_word_details}
 
+# --- データのエクスポート / インポート ---
+def make_export_payload():
+    # documents と rules_df を JSON 化する
+    payload = {
+        "documents": st.session_state.get('documents', []),
+        "rules": st.session_state.get('rules_df', pd.DataFrame(columns=['コード名', '単語リスト'])).to_dict(orient='records')
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+def load_from_payload(payload_str):
+    try:
+        data = json.loads(payload_str)
+    except Exception as e:
+        st.error(f"読み込みに失敗しました（JSON解析エラー）: {e}")
+        return False
+
+    # バリデーションと復元
+    documents = data.get('documents')
+    rules = data.get('rules')
+    if not isinstance(documents, list) or not isinstance(rules, list):
+        st.error("読み込んだデータの形式が不正です。'documents' と 'rules' を含むJSONを指定してください。")
+        return False
+
+    # documents を session_state にセット
+    st.session_state.documents = []
+    for i, d in enumerate(documents):
+        title = d.get('title', f"文書{i+1}") if isinstance(d, dict) else f"文書{i+1}"
+        text = d.get('text', '') if isinstance(d, dict) else ''
+        st.session_state.documents.append({'title': title, 'text': text})
+
+    # rules を DataFrame に変換してセット
+    try:
+        df_rules = pd.DataFrame(rules)
+        # ensure columns
+        if 'コード名' not in df_rules.columns or '単語リスト' not in df_rules.columns:
+            # try to detect alternative keys
+            df_rules = df_rules.rename(columns={c: 'コード名' if 'コード' in c else c for c in df_rules.columns})
+        st.session_state.rules_df = df_rules.reindex(columns=['コード名', '単語リスト'])
+    except Exception as e:
+        st.error(f"ルールの復元に失敗しました: {e}")
+        return False
+
+    # title_{i} と text_{i} を session_state に用意しておく
+    for i, doc in enumerate(st.session_state.documents):
+        st.session_state[f"title_{i}"] = doc['title']
+        st.session_state[f"text_{i}"] = doc['text']
+
+    # 不要な以前のキーを消す（もし文書数が減っていた場合）
+    existing_title_keys = [k for k in list(st.session_state.keys()) if isinstance(k, str) and k.startswith('title_')]
+    for k in existing_title_keys:
+        idx = int(k.split('_')[1]) if '_' in k else None
+        if idx is not None and idx >= len(st.session_state.documents):
+            del st.session_state[k]
+    existing_text_keys = [k for k in list(st.session_state.keys()) if isinstance(k, str) and k.startswith('text_')]
+    for k in existing_text_keys:
+        idx = int(k.split('_')[1]) if '_' in k else None
+        if idx is not None and idx >= len(st.session_state.documents):
+            del st.session_state[k]
+
+    st.success("データを読み込み、セッションを復元しました。")
+    return True
+
 # --- GUIの描画 ---
 st.markdown('<h1>テキスト分析<span style="color:#68BCFF; font-size:0.3em; margin-top:-8px;">©nakatani</span></h1>', unsafe_allow_html=True)
 
 col1, col2 = st.columns(2)
 with col1:
     st.header("1. 分析テキスト入力")
+    st.subheader("テキストファイルをアップロード (.txt 複数可)")
+    uploaded_txts = st.file_uploader("複数のテキストファイルを選択してください", type=['txt'], accept_multiple_files=True)
+    if uploaded_txts:
+        added = 0
+        for f in uploaded_txts:
+            try:
+                raw = f.read()
+                try:
+                    text = raw.decode('utf-8')
+                except Exception:
+                    text = raw.decode('utf-8', errors='ignore')
+                # filename から拡張子を除いたものをタイトルにする
+                name = f.name
+                if name.lower().endswith('.txt'):
+                    title = name[:-4]
+                else:
+                    title = name
+                st.session_state.documents.append({'title': title, 'text': text})
+                added += 1
+            except Exception as e:
+                st.error(f"ファイル読み込みに失敗しました: {f.name} ({e})")
+        if added > 0:
+            st.success(f"{added} 個のテキストファイルを読み込みました。")
+            st.experimental_rerun()
     for i, doc in enumerate(st.session_state.documents):
         with st.container(border=True):
             st.text_input("タイトル", value=doc["title"], key=f"title_{i}")
@@ -141,6 +237,23 @@ with col2:
     st.subheader("ルールを編集")
     edited_df = st.data_editor(st.session_state.rules_df, num_rows="dynamic", use_container_width=True)
     st.session_state.rules_df = edited_df
+
+    st.markdown("---")
+    st.subheader("設定の保存 / 読み込み")
+    col_save, col_load = st.columns([1, 1])
+    with col_save:
+        export_payload = make_export_payload()
+        st.download_button("設定をダウンロード (JSON)", data=export_payload, file_name="text_analysis_export.json", mime='application/json')
+    with col_load:
+        uploaded = st.file_uploader("保存したJSONをアップロードして復元", type=['json'])
+        if uploaded is not None:
+            try:
+                payload_str = uploaded.read().decode('utf-8')
+            except Exception:
+                payload_str = uploaded.read().decode('utf-8', errors='ignore')
+            if load_from_payload(payload_str):
+                # reload: simply rerun by setting a small placeholder; Streamlit will re-run automatically
+                st.experimental_rerun()
 
 # ★ 修正：use_container_width を削除
 if st.button("分析開始", type="primary"):
