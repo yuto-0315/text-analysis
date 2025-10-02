@@ -31,7 +31,7 @@ PRESET_RULES = {
     "自然": {"コード名": "＊自然", "単語リスト": "光,花,風,星空,雨,海,山,川,河,丘,雪,波,葉,雲,青空,虹,潮,天,森,林,木,欅,太陽,朝日,夕日,大地,地,土,水,地球,宇宙,草,実,泉,月,畑,種,野,火,野原,高原,炎"},
     "人間関係": {"コード名": "＊人間関係", "単語リスト": "もの,者,われ,我,友情,自分,じぶん,彼,あなた,君,きみ,父,母,僕,ぼく,私,わたし,人,人間,友だち,ともだち,友達,友人,仲間,家族,なかま,かぞく,みんな,おじさん,おばさん,誰,だれ"},
     "環境生活": {"コード名": "＊環境生活", "単語リスト": "学校,世界,世,町,まち,街"},
-    "時間2": {"コード名": "＊時間2", "単語リスト": "日,時,とき,時間,朝,昼,夕,夜,昨日,今日,明日,未来,過去,昔,春,夏,秋,冬"},
+    "時間2": {"コード名": "＊時間", "単語リスト": "日,時,とき,時間,朝,昼,夕,夜,昨日,今日,明日,未来,過去,昔,春,夏,秋,冬"},
     "心情": {"コード名": "＊心情", "単語リスト": "思い出,想い出,思い出す,こころ,心,気持ち"},
     "ポジティブ": {"コード名": "＊ポジティブ", "単語リスト": "夢,希望,遥か,彼方,愛,志,願い,勇気,絆,奇跡,道,途,路,扉,歌,命,無限,銀河,平和,生命,生きる,輝き,祈り,祈る,力,羽,翼,幸せ,幸福,遙か,歓び,信じる,笑顔,笑う,輝く,青春,光る,よろこび"},
     "ネガティブ": {"コード名": "＊ネガティブ", "単語リスト": "悲しい,哀しい,悲しみ,哀しみ,悲しむ,哀しむ,涙,泣く,別れ,かなしい,かなしみ,かなしむ,なみだ,なく,わかれ,弱さ,よわさ,弱い,よわい,寂しい,さびしい,寂しさ,さびしさ,不安"},
@@ -49,6 +49,30 @@ if 'rules_df' not in st.session_state:
 # ★ 追加：分析結果を保存するための場所を初期化
 if 'analysis_result' not in st.session_state:
     st.session_state.analysis_result = None
+
+# --- pending import があれば、ウィジェット作成前に反映する ---
+if '_pending_import' in st.session_state:
+    pending = st.session_state.pop('_pending_import')
+    documents = pending.get('documents', [])
+    rules = pending.get('rules', [])
+    # set documents
+    st.session_state.documents = []
+    for i, d in enumerate(documents):
+        title = d.get('title', f"文書{i+1}") if isinstance(d, dict) else f"文書{i+1}"
+        text = d.get('text', '') if isinstance(d, dict) else ''
+        st.session_state.documents.append({'title': title, 'text': text})
+    # set rules
+    try:
+        df_rules = pd.DataFrame(rules)
+        if 'コード名' not in df_rules.columns or '単語リスト' not in df_rules.columns:
+            df_rules = df_rules.rename(columns={c: 'コード名' if 'コード' in c else c for c in df_rules.columns})
+        st.session_state.rules_df = df_rules.reindex(columns=['コード名', '単語リスト'])
+    except Exception:
+        st.session_state.rules_df = pd.DataFrame(columns=['コード名', '単語リスト'])
+    # prepare title_/text_ keys
+    for i, doc in enumerate(st.session_state.documents):
+        st.session_state[f"title_{i}"] = doc['title']
+        st.session_state[f"text_{i}"] = doc['text']
 
 # --- 関数の定義 ---
 @st.cache_resource
@@ -132,6 +156,23 @@ def make_export_payload():
     }
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
+def safe_rerun():
+    """Try to rerun the app. If st.experimental_rerun is unavailable, toggle a query param to force a rerun."""
+    try:
+        # preferred method (may not exist in some Streamlit builds)
+        st.experimental_rerun()
+    except Exception:
+        try:
+            # use new query params API
+            params = dict(st.query_params)
+            # toggle a dummy param
+            cur = params.get('_r', ['0'])[0] if '_r' in params else '0'
+            params['_r'] = ['1'] if cur == '0' else ['0']
+            st.query_params = params
+        except Exception:
+            # last resort: set a session flag that will cause next run to notice changes
+            st.session_state['_force_rerun_toggle'] = not st.session_state.get('_force_rerun_toggle', False)
+
 def load_from_payload(payload_str):
     try:
         data = json.loads(payload_str)
@@ -146,43 +187,12 @@ def load_from_payload(payload_str):
         st.error("読み込んだデータの形式が不正です。'documents' と 'rules' を含むJSONを指定してください。")
         return False
 
-    # documents を session_state にセット
-    st.session_state.documents = []
-    for i, d in enumerate(documents):
-        title = d.get('title', f"文書{i+1}") if isinstance(d, dict) else f"文書{i+1}"
-        text = d.get('text', '') if isinstance(d, dict) else ''
-        st.session_state.documents.append({'title': title, 'text': text})
-
-    # rules を DataFrame に変換してセット
-    try:
-        df_rules = pd.DataFrame(rules)
-        # ensure columns
-        if 'コード名' not in df_rules.columns or '単語リスト' not in df_rules.columns:
-            # try to detect alternative keys
-            df_rules = df_rules.rename(columns={c: 'コード名' if 'コード' in c else c for c in df_rules.columns})
-        st.session_state.rules_df = df_rules.reindex(columns=['コード名', '単語リスト'])
-    except Exception as e:
-        st.error(f"ルールの復元に失敗しました: {e}")
-        return False
-
-    # title_{i} と text_{i} を session_state に用意しておく
-    for i, doc in enumerate(st.session_state.documents):
-        st.session_state[f"title_{i}"] = doc['title']
-        st.session_state[f"text_{i}"] = doc['text']
-
-    # 不要な以前のキーを消す（もし文書数が減っていた場合）
-    existing_title_keys = [k for k in list(st.session_state.keys()) if isinstance(k, str) and k.startswith('title_')]
-    for k in existing_title_keys:
-        idx = int(k.split('_')[1]) if '_' in k else None
-        if idx is not None and idx >= len(st.session_state.documents):
-            del st.session_state[k]
-    existing_text_keys = [k for k in list(st.session_state.keys()) if isinstance(k, str) and k.startswith('text_')]
-    for k in existing_text_keys:
-        idx = int(k.split('_')[1]) if '_' in k else None
-        if idx is not None and idx >= len(st.session_state.documents):
-            del st.session_state[k]
-
-    st.success("データを読み込み、セッションを復元しました。")
+    # pending import に保存して rerun 時に反映する
+    st.session_state['_pending_import'] = {
+        'documents': documents,
+        'rules': rules
+    }
+    st.success("読み込みに成功しました。画面を更新して設定を反映します。")
     return True
 
 # --- GUIの描画 ---
@@ -214,7 +224,7 @@ with col1:
                 st.error(f"ファイル読み込みに失敗しました: {f.name} ({e})")
         if added > 0:
             st.success(f"{added} 個のテキストファイルを読み込みました。")
-            st.experimental_rerun()
+            safe_rerun()
     for i, doc in enumerate(st.session_state.documents):
         with st.container(border=True):
             st.text_input("タイトル", value=doc["title"], key=f"title_{i}")
@@ -235,7 +245,7 @@ with col2:
                 st.button(name, on_click=add_preset_rule, args=(name,))
 
     st.subheader("ルールを編集")
-    edited_df = st.data_editor(st.session_state.rules_df, num_rows="dynamic", use_container_width=True)
+    edited_df = st.data_editor(st.session_state.rules_df, num_rows="dynamic", width='stretch')
     st.session_state.rules_df = edited_df
 
     st.markdown("---")
@@ -252,8 +262,8 @@ with col2:
             except Exception:
                 payload_str = uploaded.read().decode('utf-8', errors='ignore')
             if load_from_payload(payload_str):
-                # reload: simply rerun by setting a small placeholder; Streamlit will re-run automatically
-                st.experimental_rerun()
+                # reload: try to rerun safely
+                safe_rerun()
 
 # ★ 修正：use_container_width を削除
 if st.button("分析開始", type="primary"):
@@ -283,17 +293,17 @@ if st.session_state.analysis_result:
         
         with tabs[0]:
             st.subheader("単純集計 (コード出現数)")
-            st.dataframe(df_simple, use_container_width=True)
+            st.dataframe(df_simple, width='stretch')
         with tabs[1]:
             st.subheader("コードごとの単語内訳")
             selected_code = st.selectbox("内訳を表示するコードを選択", options=all_codes)
             if selected_code:
                 word_counts = Counter(coded_word_details[selected_code])
                 df_details = pd.DataFrame(word_counts.items(), columns=['単語 (基本形)', '出現回数']).sort_values('出現回数', ascending=False)
-                st.dataframe(df_details, use_container_width=True)
+                st.dataframe(df_details, width='stretch')
         with tabs[2]:
             st.subheader("クロス集計 (文書ごとのコード出現数)")
-            st.dataframe(df_cross, use_container_width=True)
+            st.dataframe(df_cross, width='stretch')
             if not df_cross.empty:
                 fig, ax = plt.subplots(figsize=(10, df_cross.shape[0] * 0.5 + 3))
                 df_cross.plot(kind='barh', stacked=True, ax=ax)
@@ -333,7 +343,7 @@ if st.session_state.analysis_result:
                 try:
                     ca = prince.CA(n_components=2, n_iter=3, copy=True, check_input=True, engine='sklearn', random_state=42).fit(df_cross_filtered)
                     altair_chart = ca.plot(df_cross_filtered).properties(title="対応分析プロット", width=600, height=500)
-                    st.altair_chart(altair_chart, use_container_width=True)
+                    st.altair_chart(altair_chart, width='stretch')
                     st.info("""
                         **【プロットの見方】**
                         - **近くにある点同士は、関連性が強い**ことを示します。
@@ -349,7 +359,7 @@ if st.session_state.analysis_result:
             doc_titles = list(morph_results.keys())
             if doc_titles:
                 selected_title = st.selectbox("結果を表示する文書を選択してください", options=doc_titles, key="morph_select")
-                if selected_title: st.dataframe(morph_results[selected_title], use_container_width=True)
+                if selected_title: st.dataframe(morph_results[selected_title], width='stretch')
     else: # コーディングルールがない場合
         st.success("形態素分析が完了しました。")
         tab1, = st.tabs(["形態素分析結果"])
@@ -359,4 +369,4 @@ if st.session_state.analysis_result:
             doc_titles = list(morph_results.keys())
             if doc_titles:
                 selected_title = st.selectbox("結果を表示する文書を選択してください", options=doc_titles, key="morph_select_only")
-                if selected_title: st.dataframe(morph_results[selected_title], use_container_width=True)
+                if selected_title: st.dataframe(morph_results[selected_title], width='stretch')
